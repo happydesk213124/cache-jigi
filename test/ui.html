@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>캐시지기 화면 시험</title>
+</head>
+<body>
+<script>
+// 가짜 Risu API: 화면만 시험 (요청 몇 개를 흘려 통계를 채움)
+// 주소 끝에 ?real=good | google | bad | short | denied 를 붙이면 "실제 캐시 확인" 결과를 바꿔 볼 수 있음
+const store = new Map();
+const local = new Map();
+const logs = [];
+const REAL = new URLSearchParams(location.search).get('real') || 'good';
+globalThis.__CACHEJIGI_TEST__ = {
+  api: {
+    addRisuReplacer: async () => {}, removeRisuReplacer: async () => {},
+    getCurrentCharacterIndex: async () => 0, getCurrentChatIndex: async () => 0,
+    getChatFromIndex: async () => ({ id: 'demo', message: [] }),
+    getFetchLogs: async () => (REAL === 'denied' ? null : logs.slice(-20).reverse()),
+    pluginStorage: { getItem: async (k) => store.get(k) ?? null, setItem: async (k, v) => { store.set(k, v); } },
+    getLocalPluginStorage: async () => ({
+      getItem: async (k) => local.get(k) ?? null, setItem: async (k, v) => { local.set(k, v); },
+      removeItem: async (k) => { local.delete(k); }, keys: async () => [...local.keys()],
+    }),
+    showContainer: async () => {}, hideContainer: async () => { document.body.innerHTML = '<p style="padding:20px">닫힘</p>'; },
+    getColorScheme: async () => ({ name: 'default', scheme: { bgcolor: '#282a36', darkbg: '#21222c', borderc: '#6272a4', selected: '#44475a', textcolor: '#f8f8f2', textcolor2: '#8be9fd', darkbutton: '#343746', draculared: '#ff5555', type: 'dark' } }),
+  },
+};
+</script>
+<script src="../cache-jigi.js"></script>
+<script>
+(async () => {
+  for (let i = 0; i < 100 && !globalThis.__CACHEJIGI_TEST__.exports; i++) await new Promise((r) => setTimeout(r, 10));
+  const P = globalThis.__CACHEJIGI_TEST__.exports;
+  await P.saveConfig({ log: 'off' });
+  // 포켓리스 프리셋처럼 본문을 만듦: system은 전부 시스템 지시문으로, 나머지는 차례대로
+  const body = (out, extra) => JSON.stringify({
+    systemInstruction: { parts: [{ text: out.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n') + (extra || '') }] },
+    contents: out.filter((m) => m.role !== 'system').map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })),
+  });
+  const filler = REAL === 'short' ? '' : '이 세계의 규칙을 차분하고 구체적으로 설명하는 긴 안내문입니다. '.repeat(400);
+  const msgs = [];
+  for (let t = 1; t <= 18; t++) {
+    const req = [
+      { role: 'system', content: `당신은 작가입니다.\n현재 시각: 12:${String(t).padStart(2, '0')}\n감각 위주로 씁니다.\n${filler}` },
+      { role: 'system', content: '이름: 리나\n성격: 무뚝뚝함' },
+      ...(t > 4 ? [{ role: 'system', content: '[숲] 북쪽 숲에는 늑대가 산다.\n밤에는 안개가 짙다.' }] : []),
+      { role: 'system', content: '[Start a new chat]', memo: 'NewChat' },
+      ...msgs,
+      { role: 'user', content: `행동 ${t}`, memo: `u${t}` },
+      { role: 'system', content: '[지시] 3문단 이내.' },
+    ];
+    const out = await P.handle(req, P.config());
+    const prompt = Math.round(JSON.stringify(out).length / 2.5);
+    if (t > 1) await P.onBody({ usageMetadata: { promptTokenCount: prompt, cachedContentTokenCount: t === 9 ? 0 : Math.round(prompt * 0.86) } }, 'meta_gemini');
+    const cached = REAL === 'good' ? Math.round(prompt * 0.88) : 0;
+    logs.push({
+      url: 'https://aiplatform.googleapis.com/v1/x:streamGenerateContent', status: 200, timestamp: Date.now() - (18 - t) * (REAL === 'google' ? 9 : 2) * 60000,
+      body: body(out, REAL === 'bad' ? `\n오늘의 운세 번호: ${t * 7919}` : ''),
+      response: `data: {"usageMetadata":{"promptTokenCount":${prompt},"candidatesTokenCount":300${cached ? `,"cachedContentTokenCount":${cached}` : ''}}}\n\n`,
+    });
+    msgs.push({ role: 'user', content: `행동 ${t}`, memo: `u${t}` }, { role: 'assistant', content: `답장 ${t} `.repeat(30), memo: `a${t}` });
+    P.onOutput();
+  }
+  await P.openUI();
+})();
+</script>
+</body>
+</html>
