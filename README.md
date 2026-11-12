@@ -64,7 +64,7 @@ node test/sim.mjs --budget=2500 --turns=80
 
 Risu처럼 프롬프트를 조립해 여러 턴을 돌리고, 연속 요청의 앞부분이 얼마나 같은지 비교합니다. 요청을 보내는 흐름(재시도 포함)과 Gemini 본문 변환은 Risu·포켓리스 원본 코드를 옮긴 것입니다.
 
-옵션: `--mode=safe|balanced|max`, `--obf=1|2`(단어 바꾸기 플러그인), `--memory=1`(무작위 요약), `--notime=1`, `--long=1`, `--omni=1|2`(Omni Nexus), `--omnibig=1`, `--varlore=1`(값이 바뀌는 로어북), `--btn=1`(지금 정리하기), `--varpost=1`(맨 뒤 지시문이 바뀜), `--conv=risu|pm|pocket`(Gemini 본문 변환), `--retry=0.2`(요청 실패 후 재시도 비율), `--bighead=1`(긴 메인 프롬프트), `--block=1`(프롬프트 안 여러 줄이 매 턴 바뀜), `--merged=1`(system 글이 하나로 합쳐짐), `--biglore=1`(긴 로어북 여러 개), `--reload=10`(새로고침), `--notail=1`(맨 뒤 처리기가 안 되는 환경), `--migrate=1`(예전 버전 상태에서 이어 감), `--trail=1`(긴 규칙·로어북이 대화와 마지막 입력 사이에 있는 프리셋), `--rows=1`, `--events=1`, `--dump=1`, `--report=1`.
+옵션: `--mode=safe|balanced|max`, `--obf=1|2`(단어 바꾸기 플러그인), `--memory=1`(무작위 요약), `--notime=1`, `--long=1`, `--omni=1|2`(Omni Nexus), `--omnibig=1`, `--varlore=1`(값이 바뀌는 로어북), `--btn=1`(지금 정리하기), `--varpost=1`(맨 뒤 지시문이 바뀜), `--conv=risu|pm|pocket`(Gemini 본문 변환), `--retry=0.2`(요청 실패 후 재시도 비율), `--bighead=1`(긴 메인 프롬프트), `--block=1`(프롬프트 안 여러 줄이 매 턴 바뀜), `--merged=1`(system 글이 하나로 합쳐짐), `--biglore=1`(긴 로어북 여러 개), `--reload=10`(새로고침), `--notail=1`(맨 뒤 처리기가 안 되는 환경), `--migrate=1`(예전 버전 상태에서 이어 감), `--trail=1`(긴 규칙·로어북이 대화와 마지막 입력 사이에 있는 프리셋), `--uuid=1`(채팅 ID를 Risu처럼 UUID로), `--memmsg=1`(다른 플러그인 표시가 붙은 기억 요약 메시지), `--rows=1`, `--events=1`, `--dump=1`, `--report=1`.
 
 결과의 "Gemini 4 규칙 적용" 줄은 실제 본문 모양과 4,096·2,050토큰 규칙을 반영한 값이라 예산이 충분히 클 때(`--budget=120000 --turns=320 --long=1`) 봅니다.
 

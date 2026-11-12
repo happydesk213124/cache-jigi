@@ -1,7 +1,7 @@
 //@name cache-jigi
 //@display-name 캐시지기 · 암시적 캐시 최적화
 //@api 3.0
-//@version 1.0.0
+//@version 1.0.1
 //@update-url https://raw.githubusercontent.com/happydesk213124/cache-jigi/main/cache-jigi.js
 //@link https://github.com/happydesk213124/cache-jigi GitHub
 
@@ -24,7 +24,7 @@
         return;
     }
 
-    const VERSION = '1.0.0';
+    const VERSION = '1.0.1';
     const TAG = '[캐시지기]';
     const now = () => (TEST && TEST.now ? TEST.now() : Date.now());
     const RETRY_WINDOW_MS = 10 * 60 * 1000;
@@ -135,7 +135,12 @@
     // Risu가 붙이는 메시지 표시: 대화는 memo = 채팅 ID, 나머지는 아래 이름들
     const NON_CHAT_MEMOS = new Set(['NewChat', 'NewChatExample', 'supaMemory', 'hypaMemory', 'supaPrompt']);
     const MEMORY_MEMOS = new Set(['supaMemory', 'hypaMemory', 'supaPrompt']);
-    const isChatMemo = (m) => !!m && typeof m.memo === 'string' && m.memo.length > 0 && !NON_CHAT_MEMOS.has(m.memo);
+    // Risu 채팅 메시지의 memo는 채팅 ID(UUID). 다른 플러그인(기억 요약 등)이 붙인 memo를 대화로 착각하지 않게,
+    // 요청에 UUID memo가 하나라도 있으면 UUID인 것만 대화로 봄
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let uuidChats = false;
+    const isChatMemo = (m) => !!m && typeof m.memo === 'string' && m.memo.length > 0 && !NON_CHAT_MEMOS.has(m.memo)
+        && (!uuidChats || UUID_RE.test(m.memo));
     const isMemory = (m) => !!m && MEMORY_MEMOS.has(m.memo);
     const isExample = (m) => !!m && (m.name === 'example_user' || m.name === 'example_assistant' || m.memo === 'NewChatExample');
 
@@ -975,6 +980,7 @@
             return again.out.map(clone);
         }
         input.forEach((m, i) => { if (m && typeof m === 'object') Object.defineProperty(m, '__i', { value: i, enumerable: false, configurable: true }); });
+        uuidChats = input.some((m) => m && typeof m.memo === 'string' && UUID_RE.test(m.memo));
         const seg = segment(input);
         if (!seg) {
             vlog('대화가 없는 요청이라 그대로 보냅니다');
@@ -1154,7 +1160,11 @@
     const armed = new Map(); // 요청 열쇠 → 앞 처리기가 맨 뒤로 넘긴 시각
     let lastChatKey = null;
 
-    const eligible = (msgs, type) => type === 'model' && Array.isArray(msgs) && config.enabled && msgs.some(isChatMemo);
+    const eligible = (msgs, type) => {
+        if (type !== 'model' || !Array.isArray(msgs) || !config.enabled) return false;
+        uuidChats = msgs.some((m) => m && typeof m.memo === 'string' && UUID_RE.test(m.memo));
+        return msgs.some(isChatMemo);
+    };
     const requestKey = (msgs) => {
         for (let i = msgs.length - 1; i >= 0; i--) if (isChatMemo(msgs[i])) return msgs[i].memo;
         return '';

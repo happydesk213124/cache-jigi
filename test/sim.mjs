@@ -31,7 +31,9 @@ const RELOAD = Number(args.reload || 0);            // N턴마다 새로고침 (
 const NO_TAIL = args.notail === '1';                // 처리기를 다시 붙이는 것이 안 되는 환경 (맨 뒤 처리기가 등록되지 않음)
 const MIGRATE = args.migrate === '1';              // 20턴째: 예전 버전(1.1.x)이 잘못 배워 둔 상태로 바꿔 놓고 이어 감
 const BIG_HEAD = args.bighead === '1';              // 실제 프리셋처럼 긴 메인 프롬프트 (약 2만 6천 자)
-const TRAIL = args.trail === '1';                   // 긴 규칙과 로어북이 대화 기록과 마지막 입력 사이에 있는 프리셋 (약 3만 자)
+const TRAIL = args.trail === '1';
+const UUID = args.uuid === '1';                     // 채팅 ID를 Risu처럼 UUID로
+const MEMMSG = args.memmsg === '1';                 // 다른 플러그인 표시(memo)가 붙은 기억 요약 메시지가 대화 뒤에 있고 매 턴 늘어남                   // 긴 규칙과 로어북이 대화 기록과 마지막 입력 사이에 있는 프리셋 (약 3만 자)
 
 let seed = SEED;
 const rand = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
@@ -264,6 +266,7 @@ function assemble(turnIdx) {
             { role: 'user', content: '# 추가 지침\n' + longRule('지침', 200) },
             { role: 'system', content: '# 이미지 출력 설정\n' + longRule('이미지', 60) },
             ...loreOn,
+            ...(MEMMSG ? [{ role: 'user', content: Array.from({ length: turnIdx }, (_, i) => `[기억 ${i + 1}] 장면 ${i + 1}의 요약입니다. 등장인물과 장소와 대화가 몇 줄 들어갑니다.`).join(String.fromCharCode(10)) || '[기억 없음]', memo: 'memoryPlugin' }] : []),
             { role: 'user', content: '# User\'s input' },
         );
     }
@@ -302,7 +305,7 @@ let retryCount = 0, retryDiff = 0, knownTurn = 0, knownEpoch = 0;
 const bakes = [];
 const problems = [];
 let chatSeq = 0;
-const newId = (p) => `${p}-${++chatSeq}`;
+const newId = (p) => (UUID ? `00000000-0000-4000-8000-${String(++chatSeq).padStart(12, '0')}` : `${p}-${++chatSeq}`);
 const userLines = ['숲으로 가보자.', '성에 들어가 볼까?', '칼을 꺼내 들었다.', '조용히 주위를 살폈다.', '리나에게 말을 걸었다.', '모닥불을 피웠다.', '지도를 펼쳤다.', '물을 마셨다.'];
 const replyWords = BIG_LORE ? ['숲', '성', '칼', '길', '사과', '늑대', '신전', '안개', '경비', '시장', '상인'] : ['숲', '성', '칼', '길'];
 const pushLog = (entry) => { fetchLogs.push(entry); if (fetchLogs.length > 40) fetchLogs.shift(); };
@@ -366,7 +369,7 @@ for (let t = 1; t <= TURNS; t++) {
     const latest = WITH_OBF ? text.replaceAll('칼', '[B64:7Lm8]') : text;
     const latestCount = finalReq.filter((m) => m.content.includes(latest)).length;
     if (latestCount !== 1) problems.push(`턴 ${t}: 최신 입력이 ${latestCount}번 들어감`);
-    const special = ['NewChat', 'NewChatExample', 'hypaMemory'];
+    const special = ['NewChat', 'NewChatExample', 'hypaMemory', 'memoryPlugin'];
     const fIds = formated.filter((m) => m.memo && !special.includes(m.memo)).map((m) => m.memo);
     const oIds = finalReq.filter((m) => m.memo && !special.includes(m.memo)).map((m) => m.memo);
     const start = fIds.indexOf(oIds[0]);
