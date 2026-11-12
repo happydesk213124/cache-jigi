@@ -37,6 +37,7 @@
     const STALE_CAP_RATIO = 0.08;
     const TAIL_STALE_MS = 30000;     // 맨 뒤 처리기가 이 시간 안에 안 불리면 실패로 봄
     const BIG_INSERT_CHARS = 4000;   // 최대 모드에서 이보다 긴 대화 사이 삽입은 꼬리 대신 장부로
+    const TRAIL_MOVE_CHARS = 1000;   // 대화 기록과 마지막 입력 사이에 낀 프리셋 글 중 이보다 긴 것은 대화 앞으로
     const FLOAT_DEPTH = 6;           // 끝에서 이만큼 안쪽의 삽입은 매 턴 자리를 옮기는 것으로 봄
 
     // =====================================================================
@@ -50,11 +51,11 @@
     };
     const DEFAULT_CONFIG = {
         enabled: true,
-        mode: 'balanced',
+        mode: 'max',
         cutRatio: 0.4,          // 정리 턴에 덜어낼 대화 비율
         keepRemoved: true,      // 꺼진 로어북 등은 다음 정리 턴까지 유지
-        freeze: 'auto',         // 과거 메시지 동결: auto(모드 따라) | on | off
-        breakpoints: 'auto',    // Claude 캐시 지점: auto | keep | off
+        freeze: 'on',           // 과거 메시지 동결: auto(모드 따라) | on | off
+        breakpoints: 'off',     // Claude 캐시 지점: auto | keep | off (기본은 끔: 오픈라우터 Gemini에서는 마지막 지점이 암시적 캐시를 방해할 수 있음)
         log: 'summary',         // 콘솔 로그: off | summary | verbose
     };
     const LABELS = {
@@ -518,7 +519,10 @@
         st.prevNewChat = hasNewChat;
         st.prevKeptHead = kept.slice(0, 12).map((x) => x.id);
         st.keptCount = kept.length;
-        const lastHistId = kept.length ? kept[kept.length - 1].id : null;
+        // 장부 항목을 붙일 자리: 진짜 대화 메시지 뒤. 프리셋 머리글("# User's input" 같은 user 글)은 매 턴 끝에 있어서 거기 붙이면 매 턴 제값
+        let lastHistId = null;
+        for (let x = kept.length - 1; x >= 0; x--) if (!kept[x].id.startsWith('h:')) { lastHistId = kept[x].id; break; }
+        if (!lastHistId && kept.length) lastHistId = kept[kept.length - 1].id;
         return { out, ids: ids2, secs, inner, lastHistId, trimming, usesMemory, cut };
     }
 
@@ -1010,6 +1014,19 @@
                 return false;
             });
         }
+        // 균형·최대 모드: 대화 기록 끝과 마지막 입력 사이에 낀 긴 프리셋 글(규칙·로어북 등)은
+        // 매 턴 새 대화에 밀려서 통째로 제값이 됨 → 대화 앞(머리)으로 옮겨서 캐시되게 함. 짧은 글은 제자리
+        if (eff.head) {
+            let lastChat = -1;
+            for (let k = seg.hist.length - 1; k >= 0; k--) if (isChatMemo(seg.hist[k].m)) { lastChat = k; break; }
+            if (lastChat >= 0) {
+                const move = new Set(seg.hist.slice(lastChat + 1).filter((it) => msgLen(it.m) >= TRAIL_MOVE_CHARS));
+                if (move.size) {
+                    seg.hist = seg.hist.filter((it) => !move.has(it));
+                    for (const it of move) seg.head.push({ i: it.i, m: it.m });
+                }
+            }
+        }
         const present = new Set(formsOf(seg.head, st, ctx.L.ph).map((c) => c.k));
         let hist = await processHistory(seg, st, eff, cfg, ctx, ev, { present });
         const head = processHead(seg, st, eff, cfg, ctx, ev, hist.lastHistId);
@@ -1397,8 +1414,8 @@
 
     const MODE_INFO = [
         ['safe', '안전', '오래된 대화만 한 번에 정리해요. 순서는 그대로라서, 매 턴 바뀌는 글이 있으면 효과가 작아요.'],
-        ['balanced', '균형', '매번 바뀌는 것만 뒤로 보내고 나머지는 고정해요. 추천'],
-        ['max', '최대', '대화 사이 삽입까지 뒤로 모아요. 캐시는 가장 좋지만 지시 위치가 바뀌어요.'],
+        ['balanced', '균형', '매번 바뀌는 것만 뒤로 보내고 나머지는 고정해요.'],
+        ['max', '최대', '대화 사이 삽입까지 뒤로 모아요. 캐시가 가장 좋아요. 기본'],
     ];
 
     function esc(text) {

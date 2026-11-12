@@ -1,2 +1,4 @@
 cache-jigi-*.html
 .claude/
+__pycache__/
+cache_check.py

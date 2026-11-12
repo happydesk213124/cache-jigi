@@ -31,6 +31,7 @@ const RELOAD = Number(args.reload || 0);            // N턴마다 새로고침 (
 const NO_TAIL = args.notail === '1';                // 처리기를 다시 붙이는 것이 안 되는 환경 (맨 뒤 처리기가 등록되지 않음)
 const MIGRATE = args.migrate === '1';              // 20턴째: 예전 버전(1.1.x)이 잘못 배워 둔 상태로 바꿔 놓고 이어 감
 const BIG_HEAD = args.bighead === '1';              // 실제 프리셋처럼 긴 메인 프롬프트 (약 2만 6천 자)
+const TRAIL = args.trail === '1';                   // 긴 규칙과 로어북이 대화 기록과 마지막 입력 사이에 있는 프리셋 (약 3만 자)
 
 let seed = SEED;
 const rand = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
@@ -225,7 +226,8 @@ function assemble(turnIdx) {
         { role: 'system', content: desc },
         { role: 'system', content: constantLore },
     ];
-    for (const l of lore) if (recent.includes(l.key)) head.push({ role: 'system', content: l.text });
+    const loreOn = lore.filter((l) => recent.includes(l.key)).map((l) => ({ role: 'system', content: l.text }));
+    if (!TRAIL) head.push(...loreOn);
     if (rand() < 0.5) head.push({ role: 'system', content: randomLore.text });
     if (VAR_LORE && turnIdx >= 10) head.push({ role: 'system', content: varLoreText(turnIdx) });
     if (WITH_MEMORY) {
@@ -251,12 +253,32 @@ function assemble(turnIdx) {
     });
     // Risu 자르기: 넘치면 맨 앞부터 하나씩 (예시 → 표시 → 첫 메시지 → 오래된 대화)
     const size = (list) => list.reduce((s, m) => s + m.content.length, 0);
-    const fixed = size(head) + 400;
+    // 대화 기록(마지막 입력 앞까지)과 마지막 입력 사이에 오는 프리셋 글: 머리글, 긴 규칙, 수락 답장, 로어북
+    const trail = [];
+    if (TRAIL) {
+        const longRule = (name, count) => Array.from({ length: count }, (_, i) => `${name} ${i + 1}: 장면은 ${i + 1}번 원칙에 따라 구체적으로 씁니다. 인물의 속마음과 감각 묘사를 균형 있게 다룹니다.`).join('\n');
+        trail.push(
+            { role: 'user', content: '# Additional Information' },
+            { role: 'system', content: '# AI 역할\n' + longRule('역할', 120) },
+            { role: 'assistant', content: 'Understood. 계속하겠습니다.' },
+            { role: 'user', content: '# 추가 지침\n' + longRule('지침', 200) },
+            { role: 'system', content: '# 이미지 출력 설정\n' + longRule('이미지', 60) },
+            ...loreOn,
+            { role: 'user', content: '# User\'s input' },
+        );
+    }
+    const fixed = size(head) + size(trail) + 400;
     while (fixed + size(chats) > BUDGET && chats.length > 2) chats.shift();
     // 작가 노트: 끝에서 2번째 위치(대화 사이)
     const an = { role: 'system', content: '[작가 노트] 긴장감을 유지하세요.' };
     const body = chats.slice();
     body.splice(Math.max(0, body.length - 2), 0, an);
+    if (TRAIL) {
+        // Risu 프리셋의 "대화(마지막 하나 빼고) → 프리셋 글 → 마지막 입력" 구성
+        let li = -1;
+        for (let k = body.length - 1; k >= 0; k--) if (body[k].role === 'user' && body[k].memo) { li = k; break; }
+        if (li >= 0) body.splice(li, 0, ...trail);
+    }
     const all = [...head, ...body, { role: 'system', content: `[지시] 다음 응답은 3문단 이내로. 사용자의 행동은 쓰지 마세요.${VAR_POST ? ` 지금 턴: ${turnIdx}` : ''}` }];
     if (!MERGED) return all;
     // Risu pushPrompts: 모델 이름이 gpt·claude·openrouter·reverse_proxy면 연달은 system 글(memo·name이 같은 것)을 "\n\n"로 합침
@@ -353,8 +375,9 @@ for (let t = 1; t <= TURNS; t++) {
     if (cps > 4) problems.push(`턴 ${t}: 캐시 지점 ${cps}개`);
     if (!finalReq.at(-1).content.includes('[지시]')) problems.push(`턴 ${t}: 맨 끝 지시문이 사라짐`);
     if (CONV === 'pocket' && MODE !== 'safe') {
-        const c = toGeminiPocket(finalReq).contents;
-        for (let i = 1; i < c.length; i++) if (c[i].role === 'user' && c[i - 1].role === 'user') { problems.push(`턴 ${t}: user 메시지가 연달아 나감`); break; }
+        // 프리셋 자체가 user 글을 연달아 두는 경우(머리글 + 입력 등)는 원본과 비교
+        const pairs = (list) => { const c = toGeminiPocket(list).contents; let n = 0; for (let i = 1; i < c.length; i++) if (c[i].role === 'user' && c[i - 1].role === 'user') n++; return n; };
+        if (pairs(finalReq) > pairs(formated)) problems.push(`턴 ${t}: user 메시지가 연달아 나감`);
     }
     const outText = ser(finalReq);
     if (!NO_TIME && !outText.includes(`현재 시각: ${hhmm(clock)}`)) problems.push(`턴 ${t}: 지금 시각이 요청에 없음`);
